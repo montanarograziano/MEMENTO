@@ -16,8 +16,8 @@ from ..experiment.images2frames import normalize, resize_to_input_shape
 from . import __version__
 from .monitoring import instrumentator
 
-model_pet = tf.keras.models.load_model('data/model/pet.h5')
-model_mri = tf.keras.models.load_model('data/model/mri.h5')
+model_pet = tf.keras.models.load_model('data/models/pet.h5')
+model_mri = tf.keras.models.load_model('data/models/mri.h5')
 
 
 class PredictionFormatEnum(str, enum.Enum):
