@@ -16,17 +16,13 @@ from ..experiment.images2frames import normalize, resize_to_input_shape
 from . import __version__
 from .monitoring import instrumentator
 
-model_pet = tf.keras.models.load_model('data/models/pet.h5')
-model_mri = tf.keras.models.load_model('data/models/mri.h5')
+model = tf.keras.models.load_model('data/models/memento-pet.h5')
 
 
 class PredictionFormatEnum(str, enum.Enum):
     TXT = "txt"
     JSON = "json"
 
-class ScanType(str, enum.Enum):
-    MRI = 'mri'
-    PET = 'pet'
 
 class ReportFormatEnum(str, enum.Enum):
     TXT = "txt"
@@ -34,12 +30,8 @@ class ReportFormatEnum(str, enum.Enum):
     HTML = "html"
 
 
-def classify(image, model):
-    return list(map(float, model.predict(image)))
-
-
 def classify(image):
-    return list(map(float, model_pet.predict(image)))
+    return list(map(float, model.predict(image)))
 
 
 def save_upload_file_tmp(upload_file: UploadFile) -> Path:
@@ -71,11 +63,11 @@ async def startup_event():
 
 @app.post("/predict")
 def predict(
-        image: UploadFile = File(...),
-        format: PredictionFormatEnum = Query(
-            "json",
-            description="The format in which the output will be returned",
-        )
+    image: UploadFile = File(...),
+    format: PredictionFormatEnum = Query(
+        "json",
+        description="The format in which the output will be returned",
+    )
 ):
     tmp_path = save_upload_file_tmp(image)
     try:
@@ -85,19 +77,16 @@ def predict(
         headers = {'X-predicted-probability': str(res['probability'])}
     finally:
         tmp_path.unlink()
-    return JSONResponse(res, headers=headers) if format == "json" else PlainTextResponse(str(res["probability"]),
-                                                                                         headers=headers)
+    return JSONResponse(res, headers=headers) if format == "json" else PlainTextResponse(str(res["probability"]), headers=headers)
 
 
 @app.post("/report")
 def report(
-        scan: UploadFile = File(...),
-        format: ReportFormatEnum = Query(
-            "json",
-            description="The format in which the output will be returned",
-        ),
-        scan_type: ScanType = Query("mri", description="The type of scan to be analyzed")
-
+    scan: UploadFile = File(...),
+    format: ReportFormatEnum = Query(
+        "json",
+        description="The format in which the output will be returned",
+    )
 ):
     tmp_path = save_upload_file_tmp(scan)
     try:
@@ -105,40 +94,33 @@ def report(
         if len(image.shape) == 4:
             image = np.mean(image, axis=3)
         image = normalize(image)
-        image = resize_to_input_shape(image, n_frames=50)
-        if scan_type == 'mri':
-            model = model_mri
+        image = resize_to_input_shape(image, n_frames=20)
+        res = {
+            "probabilities": classify(np.vstack([np.expand_dims(image[:, :, i], 0) for i in range(20)])),
+        }
+        res["final_probability"] = np.mean(res["probabilities"])
+        headers = {'X-predicted-probability': str(res["final_probability"])}
+
+        if format == "txt":
+            with open(Path(__file__).parent / "resources/templates/report.txt") as fin:
+                template = fin.read()
+            res = PlainTextResponse(template.format(
+                str(datetime.datetime.now(datetime.timezone.utc)).center(60),
+                scan.filename,
+                *list(map(lambda x: f"{round(x*100, 2)}%".center(10), res["probabilities"])),
+                f"{round(res['final_probability'] * 100, 2)}%".center(60)
+            ), media_type="text/plain; charset=utf-8", headers=headers)
+        elif format == "html":
+            with open(Path(__file__).parent / "resources/templates/report.html") as fin:
+                template = fin.read()
+            res = HTMLResponse(template.format(
+                str(datetime.datetime.now(datetime.timezone.utc)).center(60),
+                scan.filename,
+                *list(map(lambda x: f"{round(x*100, 2)}%".center(10), res["probabilities"])),
+                f"{round(res['final_probability'] * 100, 2)}%".center(60)
+            ), headers=headers)
         else:
-            model = model_pet
-        res = {"probability": classify(image, model)}
-
-
-        # res = {
-        #     "probabilities": classify(np.vstack([np.expand_dims(image[:, :, i], 0) for i in range(20)])),
-        # }
-        # res["final_probability"] = np.mean(res["probabilities"])
-        # headers = {'X-predicted-probability': str(res["final_probability"])}
-        #
-        # if format == "txt":
-        #     with open(Path(__file__).parent / "resources/templates/report.txt") as fin:
-        #         template = fin.read()
-        #     res = PlainTextResponse(template.format(
-        #         str(datetime.datetime.now(datetime.timezone.utc)).center(60),
-        #         scan.filename,
-        #         *list(map(lambda x: f"{round(x * 100, 2)}%".center(10), res["probabilities"])),
-        #         f"{round(res['final_probability'] * 100, 2)}%".center(60)
-        #     ), media_type="text/plain; charset=utf-8", headers=headers)
-        # elif format == "html":
-        #     with open(Path(__file__).parent / "resources/templates/report.html") as fin:
-        #         template = fin.read()
-        #     res = HTMLResponse(template.format(
-        #         str(datetime.datetime.now(datetime.timezone.utc)).center(60),
-        #         scan.filename,
-        #         *list(map(lambda x: f"{round(x * 100, 2)}%".center(10), res["probabilities"])),
-        #         f"{round(res['final_probability'] * 100, 2)}%".center(60)
-        #     ), headers=headers)
-        # else:
-        #     res = JSONResponse(res, headers=headers)
+            res = JSONResponse(res, headers=headers)
     finally:
         tmp_path.unlink()
 
