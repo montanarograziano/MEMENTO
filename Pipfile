@@ -9,7 +9,7 @@ numpy = "*"
 pyyaml = "*"
 scipy = "*"
 nibabel = "*"
-fastapi = {extras = ["all"], version = "*"}
+fastapi = {extras = ["all"], version = "0.90.1"}
 python-multipart = "*"
 opencv-python = "*"
 tensorflow = "*"
